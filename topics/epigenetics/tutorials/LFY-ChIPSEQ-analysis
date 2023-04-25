@@ -1,0 +1,257 @@
+---
+layout: tutorial_hands_on
+
+title: Identification of LFY targets and binding motif
+zenodo_link: https://zenodo.org/record/7863457
+questions:
+- Which genes are targets of the transcription factor LFY?
+- What is the cis-element bound by the transcription factor LFY?
+objectives:
+- Assess the quality of ChIP-SEQ datasets
+- Perform peak calling with MACS2 to identify LFY target genes
+- Predict the binding motif of LFY
+time_estimation: 3H
+key_points:
+- deeptools package can be used to perform QC analysis of ChIP-SEQ samples
+- MACS2 can be used to identify ChIP-SEQ peaks and the irreducible discovery rate to select peaks consistent between replicates 
+- Bedtools can be used to extract fasta sequences of ChIP peaks
+- MEME suite of programs can predict binding motifs of a TF using fasta sequences
+contributors:
+- Steven James Burgess
+---
+[this tutorial is under development]
+
+# Introduction
+During the initiation of flowering the transcription factor LEAFY (LFY) causes groups of undifferentiated cells in floral meristems to develop into flowers instead of shoots. In this tutorial, inspired by Sayou et al. 2016 (https://doi.org/10.1038/ncomms11222) we will analyze ChIP-SEQ data to identify downstream targets of LFY and predict the cis-element bound by this regulator.
+
+#Experimental design
+The main objectives of this training are to identify potential targets of the transcription factor LFY and predict the DNA-binding motif. Our starting hypothesis is that LFY plays a role in activating expression of genes involved in flowering through binding to the promoter including the Floral homeotic gene encoding a MADS domain protein APETALA 1 (AP1;AT1G69120).
+
+#Background on the data
+In order to reduce the analysis run time for this tutorial raw reads were downloaded, trimmed and aligned to the genome prior to analysis. Only reads mapping to chr1 on the Arabidopsis genome are included.
+
+##ChIP-SEQ reads
+The ChIP-SEQ datasets consist of four BAM files, generated through the IIllumina GAxII sequencing platform and aligned to the Arabidopsis TAIR10 genome version using Bowtie2. The samples were obtained from 15-day old p35S:LFY and wild-type Columbia (Col-0) seedlings grown under long days at 23 oC on MS medium. The original datasets are available in the NCBI SRA database, with the accession number SRP051214. 
+
+##Additional datasets
+In addition to the aligned reads obtained from the NCBI database, we will use an annotation file from Phytozome:
+- At_gene.bed is a BED file containing gene annotations. This was generated from the 
+
+# Get data
+
+> <hands-on-title> Data Upload </hands-on-title>
+>
+> 1. Create a new history for this tutorial
+>
+> 2. Import the files from Zenodo:
+>    - Click on Rule-based tab 
+>    - `Upload data as`: `Datasets(s)`
+>
+> 3. Copy the following tabular data, paste it into the textbox and press `Build`
+>
+>    ```
+>	LFY ChIP input rep 1	https://zenodo.org/record/7846179/files/SRR1719111_chr1_subset.bam
+>	LFY ChIP input rep 2	https://zenodo.org/record/7846179/files/SRR1719112_chr1_subset.bam
+>	Control ChIP input rep 1	https://zenodo.org/record/7846179/files/SRR1719115_chr1_subset.bam
+>	Control ChIP input rep 2	https://zenodo.org/record/7846179/files/SRR1719116_chr1_subset.bam
+
+>    ```
+>
+> 4. Click `Add Definition` button and select `List Identifier(s)`: `column A`
+>
+> 5. Click `Add Definition` button and select `URL`: `column B`
+>
+> 6. Select datatype `bam`
+>
+> 7. Select genome `Arabidopsis thaliana TAIR10`
+>
+> 8. Click `Apply` and press `Upload`
+> 
+{: .hands_on}
+
+# QC Analysis
+Several aspects can go wrong in a ChIP-SEQ experiment, problems can arise from using poor quality or unspecific antibodies, sometimes there is little enrichment during immunoprecipitation, or amplification and fragmentation biases can occur during library preparation. It is therefore necessary to run QC checks on data to determine if an experiment has been successful.
+
+There are several common measures to determine the quality of a ChIP-SEQ experiment including sample similarity, strength of enrichment, numbers of reads in peaks, sample depth, low enrichment in control and GC bias. In this tutorial we will focus on two QC checks, using programs from the “deepTools” package to perform the analysis (more information on deepTools can be found here). But it is advised to read the ENCODE guidelines for a deeper understanding of the quality control measures.
+First we will look at sample similarity, in this approach we compare read counts at each genomic location between samples, as we expect that replicate samples should be more similar to each other than others. 
+
+## Assessing the correlation between samples
+
+First we will use **multiBamSummary** to split the reference genome into bins of equal size and counts the number of reads in each bin from each sample, then **plotCorrelation** will be used to visualize the results.
+
+> <hands-on-title> Assessing correlation between samples </hands-on-title>
+>
+> 1. {% tool [multiBamSummary](toolshed.g2.bx.psu.edu/repos/bgruening/deeptools_multi_bam_summary/deeptools_multi_bam_summary/3.5.1.0.0) %} with the following parameters:
+>    - *"Sample order matters"*: `No`
+>        - {% icon param-files %} *"BAM/CRAM file"*: `LFY ChIP input rep 1`, `LFY ChIP input rep 2`, `Control ChIP input rep 1`, `Control ChIP input rep 2`
+>    - *"Would you like custom sample labels?"*: `No, use sample names in the history`
+>    - *"Choose computation mode"*: `Bins`
+>    - *"Show advanced options"*: `yes`
+>        - *"Extend reads to the given average fragment size."*: `No extension. The default value and most typically appropriate.`
+>
+> 2. Rename the output file to `MultiBamSummary LFY ChIP`
+>
+> 3. {% tool [plotCorrelation](toolshed.g2.bx.psu.edu/repos/bgruening/deeptools_plot_correlation/deeptools_plot_correlation/3.5.1.0.0) %} with the following parameters:
+>    - {% icon param-file %} *"Matrix file from the multiBamSummary tool"*: `MultiBamSummary LFY ChIP` (output of **multiBamSummary** {% icon tool %})
+>    - *"Correlation method"*: `Pearson`
+>    - *"Plotting type"*: `Heatmap`
+>        - *"Plot the correlation value"*: `Yes`
+>    - *"Skip zeros"*: `Yes`
+{: .hands_on}
+> <question-title></question-title>
+>
+> 1. How are your samples clustered? Does that correspond to your expectations?
+> 2. In what situations would using a Spearman correlation be more appropriate that Pearson?
+> >
+> > <solution-title></solution-title>
+> >
+> > 1. The control and treatment samples cluster separately which is what we would expect?
+> > 2. A Spearman correlation is based on ranks and less influenced by outliers, it is more appropriate if the data does not follow a normal distribution 
+> >
+> {: .solution}
+>
+{: .question}
+
+Next we will look at whether we see a peak of LFY binding upstream of TSSs as might be expected for a transcription factor.
+
+> <hands-on-title> Viewing peak distribution </hands-on-title>
+>
+> 1. {% tool [computeMatrix](toolshed.g2.bx.psu.edu/repos/bgruening/deeptools_compute_matrix/deeptools_compute_matrix/3.5.1.0.0) %} with the following parameters:
+>    - In *"Select regions"*:
+>        - {% icon param-repeat %} *"Insert Select regions"*
+>            - {% icon param-file %} *"Regions to plot"*: `LFY ChIP input rep 1 (as bigwig)`, `LFY ChIP input rep 2 (as bigwig)`, `Control ChIP input rep 1 (as bigwig)`, `Control ChIP input rep 2 (as bigwig)`
+>    - *"Sample order matters"*: `No`
+>        - {% icon param-files %}
+>    - *"Would you like custom sample labels?"*: `No, use sample names in the history`
+>    - *"computeMatrix has two main output options"*: `reference-point`
+>    - *"Show advanced output settings"*: `no`
+>    - *"Show advanced options"*: `yes`
+>        - *"Convert missing values to 0?"*: `Yes`
+>        - *"Skip zeros"*: `Yes`
+>
+> 2. Rename the output file to `LFY ChIP TSS matrix`
+>
+> 3. {% tool [plotHeatmap](toolshed.g2.bx.psu.edu/repos/bgruening/deeptools_plot_heatmap/deeptools_plot_heatmap/3.5.1.0.1) %} with the following parameters:
+>    - {% icon param-file %} *"Matrix file from the computeMatrix tool"*: `LFY ChIP TSS matrix`
+>    - *"Show advanced output settings"*: `yes`
+>    - *"Show advanced options"*: `yes`
+>        - *"Did you compute the matrix with more than one groups of regions?"*: `Yes, I used multiple groups of regions`
+>
+{: .hands_on}
+
+## Assessing IP quality
+
+Next we will assess the quality of the immunopreciptation step in the protocol using **plotFingerprint**. This tool determines how well the ChIP signal can be detected compared to background distribution of reads in a sample.
+
+> <hands-on-title> Assessing IP quality </hands-on-title>
+>
+> 1. {% tool [plotFingerprint](toolshed.g2.bx.psu.edu/repos/bgruening/deeptools_plot_fingerprint/deeptools_plot_fingerprint/3.5.1.0.0) %} with the following parameters:
+>    - *"Sample order matters"*: `No`
+>        - {% icon param-files %} *"BAM/CRAM file"*: `LFY ChIP input rep 1`, `LFY ChIP input rep 2`, `Control ChIP input rep 1`, `Control ChIP input rep 2`
+>    - *"Would you like custom sample labels?"*: `No, use sample names in the history`
+>    - *"Region of the genome to limit the operation to"*: `chr1`
+>    - *"Show advanced options"*: `yes`
+>        - *"Extend reads to the given average fragment size."*: `No extension. The default value and most typically appropriate.`
+>        - *"Skip zeros"*: `Yes`
+>        - *"Title of the plot"*: `LFY IP Strength`
+>    - *"Show advanced output settings"*: `no`
+>
+{: .hands_on}
+
+
+# Peak calling
+
+Now that we are confident that the ChIP protocol was successful we will proceed to identify enriched regions known as "peaks" which represent the genomic sites where LFY binds. To do this, we will use the program **MACS2** which calculates a p-value for each peak using a Poisson distribution to capture local biases in read background levels. Analysis will be performed separately on each input sample then the irreproducible discovery rate (IDR) calculated to determine peaks which were reproducible between replicates.
+
+> <hands-on-title> Peak calling using MACS2 </hands-on-title>
+>
+> 1. {% tool [MACS2 callpeak](toolshed.g2.bx.psu.edu/repos/iuc/macs2/macs2_callpeak/2.2.7.1+galaxy0) %} with the following parameters:
+>    - *"Are you pooling Treatment Files?"*: `No`
+>        - {% icon param-file %} *"ChIP-Seq Treatment File"*: `LFY ChIP input rep 1`
+>    - *"Do you have a Control File?"*: `Yes`
+>        - *"Are you pooling Control Files?"*: `Yes`
+>            - {% icon param-files %} *"ChIP-Seq Control File"*: `Control ChIP input 1` and `Control ChIP input 2`
+>    - *"Effective genome size"*: `User defined`
+>        - *"Effective genome size"*: `100000000`
+>    - *"Build Model"*: `Build the shifting model`
+>    - *"Peak detection based on"*: `q-value`
+>    - *"Additional Outputs"*: ``
+>    - In *"Advanced Options"*:
+>        - *"Composite broad regions"*: `No broad regions`
+>        - *"How many duplicate tags at the exact same location are allowed?"*: `1`
+>
+> 2. Rename the output `LFY rep 1 peaks (narrow Peaks)`
+>
+> 3. {% tool [MACS2 callpeak](toolshed.g2.bx.psu.edu/repos/iuc/macs2/macs2_callpeak/2.2.7.1+galaxy0) %} with the following parameters:
+>    - *"Are you pooling Treatment Files?"*: `No`
+>        - {% icon param-file %} *"ChIP-Seq Treatment File"*: `LFY ChIP input rep 2` (Input dataset)
+>    - *"Do you have a Control File?"*: `Yes`
+>        - *"Are you pooling Control Files?"*: `Yes`
+>            - {% icon param-files %} *"ChIP-Seq Control File"*: `Control ChIP input 1` and `Control ChIP input 2`
+>    - *"Effective genome size"*: `User defined`
+>        - *"Effective genome size"*: `100000000`
+>    - *"Build Model"*: `Build the shifting model`
+>    - *"Peak detection based on"*: `q-value`
+>    - *"Additional Outputs"*: ``
+>    - In *"Advanced Options"*:
+>        - *"Composite broad regions"*: `No broad regions`
+>        - *"How many duplicate tags at the exact same location are allowed?"*: `1`
+>
+> 4. Rename the output `LFY rep 2 peaks (narrow Peaks)`
+>
+> 5. {% tool [IDR](toolshed.g2.bx.psu.edu/repos/iuc/idr/idr/2.0.3) %} with the following parameters:
+>    - {% icon param-file %} *"First set of peaks in GFF or BED format"*: `LFY rep 1 peaks (narrow Peaks)` (output of **MACS2 callpeak** {% icon tool %})
+>    - {% icon param-file %} *"Second set of peaks in GFF or BED format"*: `LFY rep 2 peaks (narrow Peaks)` (output of **MACS2 callpeak** {% icon tool %})
+>    - *"Input BED format"*: `ENCODE narrowPeak`
+>    - *"Column to use for ranking peaks"*: `q value`
+>    - *""*: `0.01`
+>    - *""*: `0.01`
+>    - *"Set the IDR value for a group of multi summit peaks"*: `Yes`
+>
+> 6. Rename the output `LFY ChIP IDR peaks`
+{: .hands_on}
+
+# Motif prediction
+
+Finally we will aim to predict the binding sequence of LFY using the tool **MEME-ChIP** which  discovers sequence motifs characteristic of a TF given a set of input sequences. We will therefore use **bedtools** to extract the DNA sequences of the IDR ChIP peaks and use this as an input for motif discovery. 
+
+> <hands-on-title> Motif prediction using MEME-ChIP </hands-on-title>
+>
+> 1. {% tool [bedtools getfasta](toolshed.g2.bx.psu.edu/repos/iuc/bedtools/bedtools_getfastabed/2.30.0+galaxy1) %} with the following parameters:
+>    - {% icon param-file %} *"BED/bedGraph/GFF/VCF/EncodePeak file"*: `LFY ChIP IDR peaks` (output of **IDR** {% icon tool %})
+>    - *"Choose the source for the FASTA file"*: `Server indexed files`
+>        - *""*: `Arabidopsis thaliana TAIR10 (Arabidopsis_thaliana_TAIR10) (Arabidopsis_thaliana_TAIR10)`
+>
+> 2. Rename the output `LFY ChIP IDR peaks.fasta` 
+>
+> 3. {% tool [MEME-ChIP](toolshed.g2.bx.psu.edu/repos/iuc/meme_chip/meme_chip/4.11.2+galaxy1) %} with the following parameters:
+>    - {% icon param-file %} *"Primary sequences"*: `LFY ChIP IDR peaks.fasta` (output of **bedtools getfasta** {% icon tool %})
+>    - *"Options Configuration"*: `Advanced`
+>        - *"Should subsampling be random?"*: `Yes`
+>        - *"What is the expected motif site distribution?"*: `Zero or one occurances per sequence`
+>        - *"Minimum motif width"*: `6`
+>        - *"Maximum motif width"*: `12`
+>        - *"Maximum number of motifs to find"*: `5`
+>        - *"Stop DREME searching after finding this many motifs"*: `5`
+>    - *"I certify that I am not using this tool for commercial purposes."*: `Yes`
+>
+{: .hands_on}
+> <question-title></question-title>
+>
+> 1. Does the top predicted motif resemble the canonical LFY binding motif "CCANTGG"
+> 2. Why do you think that there were multiple motifs predicted by the algorithm, what could these represent?
+> >
+> > <solution-title></solution-title>
+> >
+> > 1. The top predicted motif is similar to the canonical motif which is encouraging
+> > 2. Several other motifs were predicted, these could represent instances of co-binding complexes, or TFs which are in competition with LFY.
+> >
+> {: .solution}
+>
+{: .question}
+
+# Conclusion
+
+- The quality of IP can vary widely between samples and it is important to check before performing analyses
+- IDR can be used to identify peaks which are consistent between replicates
+- Motif prediction algorithms can provide insight into the DNA binding properties of TFs
